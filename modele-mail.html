@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Modèle mail — Suivi de candidatures</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='10' fill='%231a1a1a'/><text x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' font-family='system-ui,sans-serif' font-weight='700' font-size='20' fill='%23C9A84C' letter-spacing='1'>JOB</text></svg>"/>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;overflow:hidden}
+    body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#f5f4f1;color:#1a1a1a;font-size:13px;display:flex;flex-direction:column}
+
+    /* FIXED HEADER */
+    #fixed-header{position:fixed;top:0;left:0;right:0;z-index:100}
+
+    /* SCROLL AREA */
+    #scroll-area{position:fixed;left:0;right:0;bottom:0;overflow-y:auto;background:#f5f4f1}
+
+    /* NAV */
+    nav{background:#111;display:flex;gap:0;border-bottom:1px solid #333;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+    nav::-webkit-scrollbar{display:none}
+    nav a{color:#ccc;text-decoration:none;padding:.75rem 1.5rem;font-size:.82rem;letter-spacing:.05em;text-transform:uppercase;font-weight:600;transition:background .15s,color .15s;white-space:nowrap;flex-shrink:0}
+    nav a:hover,nav a.active{background:#fff;color:#111}
+
+    /* HEADER */
+    .hdr{background:#1a1a1a;color:#fff;padding:1.5rem 1.5rem 1.2rem;border-bottom:1px solid #333}
+    .hdr h1{font-size:1.2rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+    .hdr p{margin-top:.25rem;font-size:.78rem;color:#888}
+
+    /* LOADING */
+    #loading-screen{position:fixed;inset:0;background:#f5f4f1;z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;color:#666;font-size:.85rem}
+    .spinner{width:32px;height:32px;border:3px solid #ddd;border-top-color:#1a1a1a;border-radius:50%;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* CONTENT */
+    .page-wrap{max-width:780px;margin:2rem auto;padding:0 1.5rem 4rem}
+
+    /* CARD */
+    .card{background:#fff;border-radius:12px;box-shadow:0 1px 6px rgba(0,0,0,.08);padding:1.75rem;margin-bottom:1.5rem}
+    .card h2{font-size:.9rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:1.2rem;color:#1a1a1a}
+
+    /* TEXTAREA */
+    #template-ta{width:100%;min-height:380px;border:1px solid #e0e0e0;border-radius:8px;padding:1rem;font-family:'Segoe UI',system-ui,sans-serif;font-size:.82rem;line-height:1.7;color:#1a1a1a;background:#fafaf8;resize:vertical}
+    #template-ta:focus{outline:none;border-color:#7c3aed;background:#fff}
+
+    /* VARIABLES INFO */
+    .var-list{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem}
+    .var-tag{background:#f3e8ff;color:#7c3aed;border-radius:6px;padding:.3rem .7rem;font-size:.75rem;font-weight:700;font-family:'Courier New',monospace;cursor:help}
+
+    /* PREVIEW */
+    .preview-wrap{background:#fafaf8;border:1px solid #e0e0e0;border-radius:8px;padding:1rem;font-size:.82rem;line-height:1.7;white-space:pre-wrap;color:#444;min-height:100px}
+
+    /* ACTIONS */
+    .actions{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-top:1.2rem}
+    .btn{border:none;border-radius:7px;padding:.5rem 1.2rem;font-size:.82rem;font-weight:700;cursor:pointer;transition:background .15s}
+    .btn-save{background:#7c3aed;color:#fff}.btn-save:hover{background:#6d28d9}
+    .btn-reset{background:transparent;border:1px solid #ccc;color:#666}.btn-reset:hover{border-color:#1a1a1a;color:#1a1a1a}
+    #status-msg{font-size:.78rem;font-weight:600;opacity:0;transition:opacity .4s;margin-left:.5rem}
+    #status-msg.show{opacity:1}
+    #status-msg.ok{color:#15803d}
+    #status-msg.err{color:#dc2626}
+
+    /* MOBILE */
+    @media(max-width:700px){
+      .hdr{display:none}
+      nav a{padding:.55rem .9rem;font-size:.72rem}
+      .page-wrap{margin:1rem auto;padding:0 .75rem 3rem}
+      #template-ta{min-height:260px}
+    }
+  </style>
+</head>
+<body>
+
+<div id="loading-screen">
+  <div class="spinner"></div>
+  <p>Chargement…</p>
+</div>
+
+<div id="fixed-header">
+  <nav>
+    <a href="carte.html">🗺️ Carte</a>
+    <a href="index.html">📊 Tableau de suivi</a>
+    <a href="modele-mail.html" class="active">📧 Modèle mail</a>
+  </nav>
+</div>
+
+<div id="scroll-area">
+  <div class="page-wrap">
+
+    <!-- OBJET -->
+    <div class="card">
+      <h2>📌 Objet du mail</h2>
+      <input type="text" id="subject-in" style="width:100%;box-sizing:border-box;padding:.6rem .8rem;border:1px solid #e2e8f0;border-radius:8px;font-size:.9rem;font-family:inherit;margin-top:.3rem" placeholder="Objet du mail…" />
+      <div class="actions" style="margin-top:.8rem">
+        <button class="btn btn-save" onclick="saveSubject()">💾 Sauvegarder l'objet</button>
+        <button class="btn btn-reset" onclick="resetSubject()">↺ Par défaut</button>
+        <span id="status-msg-subject"></span>
+      </div>
+    </div>
+
+    <!-- ÉDITEUR -->
+    <div class="card">
+      <h2>✏️ Votre lettre</h2>
+      <textarea id="template-ta" placeholder="Rédigez votre lettre de motivation ici…" spellcheck="true"></textarea>
+
+      <!-- Variables disponibles -->
+      <p style="font-size:.75rem;color:#888;margin-top:.9rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Variables remplacées automatiquement :</p>
+      <div class="var-list">
+        <span class="var-tag" title="Remplacé par le nom de l'entreprise">{{entreprise}}</span>
+        <span class="var-tag" title="Remplacé par la ville de l'entreprise">{{ville}}</span>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-save" onclick="saveTemplate()">💾 Sauvegarder</button>
+        <button class="btn btn-reset" onclick="resetTemplate()">↺ Remettre le modèle par défaut</button>
+        <span id="status-msg"></span>
+      </div>
+    </div>
+
+    <!-- APERÇU -->
+    <div class="card">
+      <h2>👁 Aperçu — exemple avec "Entreprise Martin" à Lyon</h2>
+      <div class="preview-wrap" id="preview"></div>
+    </div>
+
+    <!-- INSTRUCTIONS -->
+    <div class="card" style="background:#f9f5ff;border:1px solid #e9d5ff">
+      <h2 style="color:#7c3aed">💡 Comment ça fonctionne</h2>
+      <p style="font-size:.82rem;line-height:1.7;color:#555;margin-top:.5rem">
+        Dans le <strong>tableau de suivi</strong>, cliquez sur l'adresse email d'une entreprise (en violet).<br>
+        Votre messagerie s'ouvre automatiquement avec :<br>
+        — l'objet que vous avez configuré ci-dessus<br>
+        — ce texte pré-rempli, avec <code style="background:#ede9fe;padding:.1rem .3rem;border-radius:4px;color:#7c3aed">{{entreprise}}</code> remplacé par le nom réel de l'entreprise<br>
+        — et <code style="background:#ede9fe;padding:.1rem .3rem;border-radius:4px;color:#7c3aed">{{ville}}</code> remplacé par la ville.<br><br>
+        Il ne vous reste plus qu'à <strong>joindre votre CV et envoyer</strong> !
+      </p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// LAYOUT
+// ═══════════════════════════════════════════════════
+function adjustLayout() {
+  const h = document.getElementById('fixed-header').offsetHeight;
+  document.getElementById('scroll-area').style.top = h + 'px';
+}
+window.addEventListener('resize', adjustLayout);
+
+// ═══════════════════════════════════════════════════
+// FIREBASE
+// ═══════════════════════════════════════════════════
+// La configuration Firebase est dans le fichier firebase-config.js
+if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith('COLLE')) {
+  document.getElementById('loading-screen').innerHTML =
+    '<p style="max-width:320px;text-align:center;line-height:1.6">⚠️ Firebase n\'est pas encore configuré.<br>Colle ta configuration dans le fichier <b>firebase-config.js</b>.</p>';
+  throw new Error('Configuration Firebase manquante');
+}
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// ═══════════════════════════════════════════════════
+// MODÈLE PAR DÉFAUT
+// ═══════════════════════════════════════════════════
+const DEFAULT_SUBJECT = 'Candidature';
+
+const DEFAULT_TEMPLATE = `Madame, Monsieur,
+
+Rédigez votre lettre ici.
+
+Utilisez {{entreprise}} pour le nom de l'entreprise et {{ville}} pour la ville : ils seront remplacés automatiquement.
+
+Cordialement,
+Prénom Nom`;
+
+// ═══════════════════════════════════════════════════
+// PREVIEW
+// ═══════════════════════════════════════════════════
+function updatePreview() {
+  const tpl = document.getElementById('template-ta').value;
+  const preview = tpl
+    .replace(/\{\{(entreprise|agence)\}\}/g, 'Entreprise Martin')
+    .replace(/\{\{ville\}\}/g, 'Lyon');
+  document.getElementById('preview').textContent = preview;
+}
+
+// ═══════════════════════════════════════════════════
+// SAVE
+// ═══════════════════════════════════════════════════
+async function saveSubject() {
+  const subj = document.getElementById('subject-in').value.trim();
+  const msg = document.getElementById('status-msg-subject');
+  if (!subj) return;
+  try {
+    await userCol('settings').doc('mail').set({subject: subj}, {merge: true});
+    msg.textContent = '✓ Sauvegardé !';
+    msg.className = 'show ok';
+    setTimeout(() => msg.className = '', 2500);
+  } catch(e) {
+    msg.textContent = '⚠️ Erreur';
+    msg.className = 'show err';
+    setTimeout(() => msg.className = '', 3000);
+  }
+}
+
+function resetSubject() {
+  document.getElementById('subject-in').value = DEFAULT_SUBJECT;
+}
+
+async function saveTemplate() {
+  const tpl = document.getElementById('template-ta').value.trim();
+  const msg = document.getElementById('status-msg');
+  try {
+    await userCol('settings').doc('mail').set({template: tpl}, {merge: true});
+    msg.textContent = '✓ Sauvegardé !';
+    msg.className = 'show ok';
+    setTimeout(() => msg.className = '', 2500);
+  } catch(e) {
+    console.error(e);
+    msg.textContent = '⚠️ Erreur de sauvegarde';
+    msg.className = 'show err';
+    setTimeout(() => msg.className = '', 3000);
+  }
+}
+
+function resetTemplate() {
+  if (!confirm('Remettre le modèle par défaut ? Votre texte actuel sera perdu.')) return;
+  document.getElementById('template-ta').value = DEFAULT_TEMPLATE;
+  updatePreview();
+}
+
+// ═══════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════
+async function init() {
+  try {
+    const doc = await userCol('settings').doc('mail').get();
+    const tpl = (doc.exists && doc.data().template) ? doc.data().template : DEFAULT_TEMPLATE;
+    const subj = (doc.exists && doc.data().subject) ? doc.data().subject : DEFAULT_SUBJECT;
+    document.getElementById('subject-in').value = subj;
+    document.getElementById('template-ta').value = tpl;
+    updatePreview();
+    document.getElementById('loading-screen').style.display = 'none';
+    adjustLayout();
+  } catch(e) {
+    console.error(e);
+    document.getElementById('subject-in').value = DEFAULT_SUBJECT;
+    document.getElementById('template-ta').value = DEFAULT_TEMPLATE;
+    updatePreview();
+    document.getElementById('loading-screen').style.display = 'none';
+    adjustLayout();
+  }
+}
+
+document.getElementById('template-ta').addEventListener('input', updatePreview);
+requireAuth(init);
+</script>
+</body>
+</html>

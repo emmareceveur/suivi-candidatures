@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Suivi de candidatures</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='10' fill='%231a1a1a'/><text x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' font-family='system-ui,sans-serif' font-weight='700' font-size='20' fill='%23C9A84C' letter-spacing='1'>JOB</text></svg>"/>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;overflow:hidden}
+    body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#f5f4f1;color:#1a1a1a;font-size:13px;display:flex;flex-direction:column}
+    /* FIXED HEADER */
+    #fixed-header{position:fixed;top:0;left:0;right:0;z-index:100}
+    /* SCROLL AREA */
+    #scroll-area{position:fixed;top:120px;left:0;right:0;bottom:0;overflow-y:auto;overflow-x:auto;background:#f5f4f1}
+    /* NAV */
+    nav{background:#111;display:flex;gap:0;border-bottom:1px solid #333;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+    nav::-webkit-scrollbar{display:none}
+    nav a{color:#ccc;text-decoration:none;padding:.75rem 1.5rem;font-size:.82rem;letter-spacing:.05em;text-transform:uppercase;font-weight:600;transition:background .15s,color .15s;white-space:nowrap;flex-shrink:0}
+    nav a:hover,nav a.active{background:#fff;color:#111}
+    /* HEADER */
+    .hdr{background:#1a1a1a;color:#fff;padding:1.5rem 1.5rem 1.2rem}
+    .hdr h1{font-size:1.2rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+    .hdr p{margin-top:.25rem;font-size:.78rem;color:#888}
+    /* LOADING */
+    #loading-screen{position:fixed;inset:0;background:#f5f4f1;z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;color:#666;font-size:.85rem}
+    .spinner{width:32px;height:32px;border:3px solid #ddd;border-top-color:#1a1a1a;border-radius:50%;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    /* STATS BAR */
+    .stats-bar{background:#fff;border-bottom:1px solid #e5e5e5;padding:.8rem 1.5rem;display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap}
+    .stat-pill{display:flex;align-items:center;gap:.4rem;background:#f5f5f5;border-radius:20px;padding:.3rem .8rem;font-size:.75rem;font-weight:600;cursor:pointer;border:2px solid transparent;transition:border-color .15s}
+    .stat-pill:hover{border-color:#1a1a1a}
+    .stat-pill.active{border-color:#1a1a1a;background:#1a1a1a;color:#fff}
+    .stat-pill .num{font-size:1rem;font-weight:800}
+    /* ALERT */
+    .alert{background:#fef2f2;border-left:4px solid #dc2626;padding:.7rem 1.5rem;font-size:.8rem;color:#991b1b;display:none}
+    .alert.show{display:block}
+    /* CONTROLS */
+    .controls{background:#fff;border-bottom:1px solid #e5e5e5;padding:.7rem 1.5rem;display:flex;gap:.7rem;align-items:center;flex-wrap:wrap}
+    .controls input{border:1px solid #ddd;border-radius:6px;padding:.4rem .7rem;font-size:.8rem;background:#fff;color:#1a1a1a;width:200px}
+    .controls input:focus{outline:none;border-color:#1a1a1a}
+    label.ctrl-lbl{font-size:.75rem;color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+    .btn{border:none;border-radius:6px;padding:.4rem 1rem;font-size:.78rem;font-weight:600;cursor:pointer;transition:background .15s}
+    .btn-dark{background:#1a1a1a;color:#fff}.btn-dark:hover{background:#333}
+    .btn-outline{background:transparent;border:1px solid #ccc;color:#555}.btn-outline:hover{border-color:#1a1a1a;color:#1a1a1a}
+    .btn-add{background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:.4rem .9rem;font-size:.78rem;font-weight:700;cursor:pointer;transition:background .15s}
+    .btn-add:hover{background:#6d28d9}
+    /* TABLE WRAPPER */
+    .tbl-wrap{margin:0 1.5rem 2rem;min-width:1350px}
+    table{width:100%;border-collapse:collapse;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+    thead{position:sticky;top:0;z-index:10;background:#1a1a1a;color:#fff}
+    th{padding:.75rem .8rem;text-align:left;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;cursor:pointer;user-select:none}
+    th:hover{background:#333}
+    td{padding:.6rem .8rem;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+    tr:last-child td{border-bottom:none}
+    tr:hover td{background:#fafafa}
+    tr.overdue td{background:#fff5f5}
+    tr.refused td{background:#f8f8f8;opacity:.45;pointer-events:none}
+    tr.replied td{background:#f0fdf4}
+    tr.replied:hover td{background:#dcfce7}
+    tr.interview td{background:#fefce8}
+    tr.interview:hover td{background:#fef9c3}
+    tr.refused .status-sel{pointer-events:all;opacity:1}
+    /* STATUS */
+    select.status-sel{border:none;border-radius:6px;padding:.25rem .5rem;font-size:.75rem;font-weight:600;cursor:pointer;width:130px}
+    .s-nc{background:#f3f4f6;color:#6b7280}
+    .s-em{background:#dbeafe;color:#1d4ed8}
+    .s-r1{background:#fef3c7;color:#d97706}
+    .s-r2{background:#ffedd5;color:#ea580c}
+    .s-rp{background:#ccfbf1;color:#0f766e}
+    .s-en{background:#ede9fe;color:#7c3aed}
+    .s-ok{background:#d1fae5;color:#065f46}
+    .s-rf{background:#f3f4f6;color:#9ca3af;text-decoration:line-through}
+    /* DATE INPUTS */
+    input.date-in{border:1px solid #e5e5e5;border-radius:6px;padding:.25rem .4rem;font-size:.75rem;color:#1a1a1a;background:#fff;width:110px}
+    input.date-in:focus{outline:none;border-color:#1a1a1a}
+    input.date-in.overdue{border-color:#dc2626;background:#fff5f5;color:#dc2626}
+    input.date-in.today{border-color:#d97706;background:#fffbeb;color:#d97706}
+    /* NOTES */
+    td.notes-td{min-width:150px;max-width:220px}
+    textarea.note-ta{border:1px solid #e5e5e5;border-radius:6px;padding:.25rem .4rem;font-size:.75rem;color:#1a1a1a;background:#fff;width:100%;min-height:32px;resize:vertical;font-family:inherit}
+    textarea.note-ta:focus{outline:none;border-color:#1a1a1a}
+    /* STARS */
+    .star{cursor:pointer;font-size:1rem;color:#ddd;transition:color .1s}
+    .star.on{color:#f59e0b}
+    .star:hover{color:#f59e0b}
+    /* SOCIALS */
+    .socials-td{white-space:nowrap;cursor:pointer;min-width:52px}
+    .social-ico{display:inline-block;width:20px;height:20px;border-radius:5px;margin-right:3px;vertical-align:middle;opacity:.9;transition:opacity .15s}
+    .social-ico:hover{opacity:1}
+    .social-ico img{width:20px;height:20px;border-radius:5px;display:block}
+    /* INTEREST DOT */
+    .int-dot{cursor:pointer;width:11px;height:11px;border-radius:50%;border:2px solid #ddd;background:transparent;display:inline-block;transition:all .15s;flex-shrink:0}
+    .int-dot.green{background:#16a34a;border-color:#16a34a}
+    .int-dot.orange{background:#f97316;border-color:#f97316}
+    .int-dot:hover{border-color:#888}
+    /* LINKS */
+    a.site-lnk{color:#1d4ed8;text-decoration:none;font-size:.78rem}
+    a.site-lnk:hover{text-decoration:underline}
+    a.tel-lnk{color:#1a1a1a;text-decoration:none}
+    a.tel-lnk:hover{text-decoration:underline}
+    a.mail-lnk{color:#7c3aed;text-decoration:none;font-size:.78rem}
+    a.mail-lnk:hover{text-decoration:underline}
+    td.addr-td{color:#888;font-size:.75rem;min-width:140px;max-width:200px}
+    td.phone-td{white-space:nowrap;min-width:115px}
+    td.email-td{min-width:180px}
+    /* RELANCE BTN */
+    .btn-relance{border:none;background:#f0fdf4;color:#15803d;border-radius:5px;padding:.18rem .45rem;font-size:.72rem;font-weight:600;cursor:pointer;white-space:nowrap}
+    .btn-relance:hover{background:#dcfce7}
+    /* SAVED / SYNC */
+    #save-ind{font-size:.72rem;color:#15803d;font-weight:600;opacity:0;transition:opacity .4s}
+    #sync-ind{font-size:.72rem;color:#6b7280;margin-left:auto}
+    /* EMPTY STATE */
+    #empty-state{text-align:center;padding:3rem;color:#aaa;display:none}
+    /* EXPORT */
+    #export-btn{margin-left:auto}
+    /* DELETE BTN */
+    .btn-del{background:none;border:none;cursor:pointer;color:#ddd;font-size:.85rem;padding:.1rem .3rem;border-radius:4px;transition:color .15s,background .15s;line-height:1}
+    .btn-del:hover{color:#dc2626;background:#fff5f5}
+    /* EDITABLE CELLS */
+    .editable-td{cursor:pointer;position:relative}
+    .editable-td[onclick]:hover::after,.editable-td[ondblclick]:hover::after{content:'✏';position:absolute;right:3px;top:50%;transform:translateY(-50%);font-size:.65rem;opacity:.35;pointer-events:none}
+    .editable-td input.cell-input{border:1px solid #7c3aed;border-radius:4px;padding:.2rem .4rem;font-size:.78rem;width:100%;background:#fff;color:#1a1a1a;font-family:inherit}
+
+    /* ══════════════════════════════
+       MODAL AJOUT ENTREPRISE
+    ══════════════════════════════ */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:flex;align-items:center;justify-content:center;padding:1rem}
+    .modal-overlay.hidden{display:none}
+    .modal{background:#fff;border-radius:12px;padding:1.75rem;width:100%;max-width:520px;box-shadow:0 8px 32px rgba(0,0,0,.18)}
+    .modal h2{font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:1.2rem}
+    .modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+    .modal-grid .full{grid-column:1/-1}
+    .modal label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#666;display:block;margin-bottom:.25rem}
+    .modal input,.modal select{width:100%;border:1px solid #ddd;border-radius:7px;padding:.5rem .7rem;font-size:.82rem;color:#1a1a1a;background:#fff}
+    .modal input:focus,.modal select:focus{outline:none;border-color:#7c3aed}
+    .modal-actions{margin-top:1.2rem;display:flex;gap:.6rem;justify-content:flex-end}
+
+    /* ══════════════════════════════
+       RESPONSIVE MOBILE
+    ══════════════════════════════ */
+    @media (max-width:700px){
+      .hdr{display:none}
+      nav a{padding:.55rem .9rem;font-size:.72rem;letter-spacing:.02em}
+      .stats-bar{flex-wrap:nowrap;overflow-x:auto;padding:.45rem .75rem;gap:.55rem;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+      .stats-bar::-webkit-scrollbar{display:none}
+      .stats-bar>span:first-child{display:none}
+      #save-ind,#sync-ind{white-space:nowrap;flex-shrink:0}
+      .stat-pill{padding:.22rem .55rem;font-size:.68rem;white-space:nowrap;flex-shrink:0}
+      .stat-pill .num{font-size:.85rem}
+      .controls{padding:.45rem .75rem;gap:.35rem}
+      label.ctrl-lbl{display:none}
+      .controls input{width:120px}
+      #export-btn{margin-left:0}
+      .tbl-wrap{margin:0 0 2rem}
+      th{font-size:.62rem;padding:.55rem .4rem}
+      td{font-size:.7rem;padding:.4rem .4rem}
+      input.date-in{width:95px;font-size:.68rem}
+      select.status-sel{width:110px;font-size:.68rem}
+      textarea.note-ta{min-height:28px;font-size:.68rem}
+      #scroll-area{-webkit-overflow-scrolling:touch}
+      .alert{padding:.5rem .75rem;font-size:.75rem}
+      .modal-grid{grid-template-columns:1fr}
+      .modal-grid .full{grid-column:1}
+    }
+  </style>
+</head>
+<body>
+
+<!-- ÉCRAN DE CHARGEMENT -->
+<div id="loading-screen">
+  <div class="spinner"></div>
+  <p>Chargement…</p>
+</div>
+
+<!-- MODAL AJOUT ENTREPRISE -->
+<div class="modal-overlay hidden" id="modal-overlay" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <h2>➕ Ajouter une entreprise</h2>
+    <div class="modal-grid">
+      <div class="full">
+        <label>Nom de l'entreprise *</label>
+        <input type="text" id="m-name" placeholder="Ex : Entreprise Martin"/>
+      </div>
+      <div>
+        <label>Ville</label>
+        <input type="text" id="m-city" placeholder="Ex : Lyon"/>
+      </div>
+      <div>
+        <label>Téléphone</label>
+        <input type="tel" id="m-phone" placeholder="Ex : 04 72 00 00 00"/>
+      </div>
+      <div>
+        <label>Email</label>
+        <input type="email" id="m-email" placeholder="contact@entreprise.fr"/>
+      </div>
+      <div class="full">
+        <label>Site web</label>
+        <input type="text" id="m-site" placeholder="entreprise.fr (sans https://)"/>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+      <button class="btn-add" onclick="saveCustomAgency()">Ajouter</button>
+    </div>
+  </div>
+</div>
+
+<div id="fixed-header">
+  <nav>
+    <a href="carte.html">🗺️ Carte</a>
+    <a href="index.html" class="active">📊 Tableau de suivi</a>
+    <a href="modele-mail.html">📧 Modèle mail</a>
+  </nav>
+
+
+
+  <div class="alert" id="alert-bar">
+    ⚠️ <strong id="alert-msg"></strong> — pensez à les relancer aujourd'hui !
+  </div>
+
+  <div class="stats-bar">
+    <span style="font-size:.72rem;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.05em">Filtrer :</span>
+    <div class="stat-pill active" data-filter="all"><span class="num" id="cnt-all">—</span>&nbsp;Toutes</div>
+    <div class="stat-pill" data-filter="nc"><span class="num" id="cnt-nc">—</span>&nbsp;Non contacté</div>
+    <div class="stat-pill" data-filter="em"><span class="num" id="cnt-em">—</span>&nbsp;Envoyé</div>
+    <div class="stat-pill" data-filter="r1"><span class="num" id="cnt-r1">—</span>&nbsp;Relance 1</div>
+    <div class="stat-pill" data-filter="rp"><span class="num" id="cnt-rp">—</span>&nbsp;Réponse</div>
+    <div class="stat-pill" data-filter="rf"><span class="num" id="cnt-rf">—</span>&nbsp;Refus</div>
+    <div class="stat-pill" data-filter="en"><span class="num" id="cnt-en">—</span>&nbsp;Entretien</div>
+    <div class="stat-pill" data-filter="ok"><span class="num" id="cnt-ok">—</span>&nbsp;Poste ✓</div>
+    <div class="stat-pill" data-filter="prio"><span class="num" id="cnt-prio">—</span>&nbsp;⭐ Priorité</div>
+    <span id="save-ind">✓ Sauvegardé</span>
+    <span id="sync-ind">🔄 Firebase</span>
+  </div>
+
+  <div class="controls">
+    <label class="ctrl-lbl">Recherche</label>
+    <input type="text" id="search" placeholder="Nom, ville, site..."/>
+    <button class="btn btn-dark" onclick="resetAllFilters()">↺ Tout afficher</button>
+    <button class="btn btn-outline" onclick="setRelanceDates()">📅 Auto-relances</button>
+    <button class="btn-add" onclick="openModal()">➕ Ajouter</button>
+    <button class="btn btn-outline" id="export-btn" onclick="exportCSV()">⬇ Export CSV</button>
+  </div>
+</div>
+
+<div id="scroll-area">
+  <div class="tbl-wrap">
+    <table id="main-table">
+      <thead>
+        <tr>
+          <th style="width:28px">#</th>
+          <th onclick="sortBy('prio')" title="Trier par priorité">⭐</th>
+          <th id="int-filter-th" style="width:20px;cursor:pointer;text-align:center" onclick="cycleIntFilter(this)" title="Filtrer par intérêt"><span id="int-filter-dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;border:2px solid #888;background:transparent;transition:all .15s"></span></th>
+          <th onclick="sortBy('name')">Entreprise ↕</th>
+          <th onclick="sortBy('city')">Ville ↕</th>
+          <th>Adresse précise</th>
+          <th>Téléphone</th>
+          <th>Email</th>
+          <th>Site</th>
+          <th onclick="sortBy('status')">Statut ↕</th>
+          <th onclick="sortBy('contact')">Date contact ↕</th>
+          <th onclick="sortBy('relance')">Relance prévue ↕</th>
+          <th style="min-width:52px">Réseaux</th>
+          <th class="notes-td">Notes</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <!-- rows injected by JS -->
+      </tbody>
+    </table>
+    <div id="empty-state">Aucune entreprise pour l'instant. Clique sur « ➕ Ajouter » pour commencer.</div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// LAYOUT
+// ═══════════════════════════════════════════════════
+function adjustLayout() {
+  const h = document.getElementById('fixed-header').offsetHeight;
+  document.getElementById('scroll-area').style.top = h + 'px';
+}
+window.addEventListener('resize', adjustLayout);
+
+// ═══════════════════════════════════════════════════
+// FIREBASE INIT
+// ═══════════════════════════════════════════════════
+// La configuration Firebase est dans le fichier firebase-config.js
+if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith('COLLE')) {
+  document.getElementById('loading-screen').innerHTML =
+    '<p style="max-width:320px;text-align:center;line-height:1.6">⚠️ Firebase n\'est pas encore configuré.<br>Colle ta configuration dans le fichier <b>firebase-config.js</b>.</p>';
+  throw new Error('Configuration Firebase manquante');
+}
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const COL = 'prospection';
+
+// ═══════════════════════════════════════════════════
+// ENTREPRISES (ajoutées depuis le bouton « Ajouter »)
+// ═══════════════════════════════════════════════════
+const AGENCIES = [
+// Laisser vide : les entreprises sont enregistrées dans Firebase
+];
+
+// ═══════════════════════════════════════════════════
+// ADRESSES PRÉCISES (à compléter au fur et à mesure)
+// ═══════════════════════════════════════════════════
+const ADDRESSES = {
+// Laisser vide
+};
+
+// ═══════════════════════════════════════════════════
+// MAIL TEMPLATE
+// ═══════════════════════════════════════════════════
+const DEFAULT_TEMPLATE = `Rédigez votre modèle de mail dans la page « Modèle mail ».
+
+Utilisez {{entreprise}} pour le nom de l'entreprise et {{ville}} pour la ville.`;
+
+let mailTemplate = DEFAULT_TEMPLATE;
+let mailSubject = 'Candidature';
+
+function handleEmailClick(evt, agId) {
+  // Let the mailto open, then ask for confirmation after a short delay
+  setTimeout(() => {
+    const popup = document.createElement('div');
+    popup.id = 'mail-confirm-popup';
+    popup.innerHTML = `
+      <div style="position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9998;display:flex;align-items:center;justify-content:center">
+        <div style="background:#fff;border-radius:12px;padding:1.4rem 1.8rem;box-shadow:0 8px 32px rgba(0,0,0,.18);max-width:340px;text-align:center">
+          <div style="font-size:1.5rem;margin-bottom:.6rem">✉️</div>
+          <div style="font-weight:600;font-size:1rem;margin-bottom:.3rem">Mail envoyé ?</div>
+          <div style="color:#666;font-size:.85rem;margin-bottom:1.1rem">Si oui, le statut passera à <strong>Email envoyé</strong> et la relance sera fixée à J+14.</div>
+          <div style="display:flex;gap:.7rem;justify-content:center">
+            <button onclick="confirmMailSent('${agId}',true)" style="background:#16a34a;color:#fff;border:none;border-radius:7px;padding:.45rem 1.1rem;font-weight:600;cursor:pointer;font-size:.9rem">Oui, envoyé ✓</button>
+            <button onclick="confirmMailSent('${agId}',false)" style="background:#f1f5f9;color:#334155;border:none;border-radius:7px;padding:.45rem 1.1rem;font-weight:600;cursor:pointer;font-size:.9rem">Non</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(popup);
+  }, 400);
+}
+
+function confirmMailSent(agId, sent) {
+  const popup = document.getElementById('mail-confirm-popup');
+  if (popup) popup.remove();
+  if (!sent) return;
+  const today = new Date().toISOString().slice(0,10);
+  const relance = addDays(today, 14);
+  saveEntry(agId, 'status', 'em');
+  saveEntry(agId, 'contactDate', today);
+  saveEntry(agId, 'relanceDate', relance);
+  renderTable();
+}
+
+function makeMailto(ag) {
+  const tpl = mailTemplate
+    .replace(/\{\{(entreprise|agence)\}\}/g, ag.name)
+    .replace(/\{\{ville\}\}/g, ag.city);
+  const subject = encodeURIComponent(mailSubject);
+  const body = encodeURIComponent(tpl);
+  return `mailto:${ag.email}?subject=${subject}&body=${body}`;
+}
+
+// ═══════════════════════════════════════════════════
+// STATUT CONFIG
+// ═══════════════════════════════════════════════════
+const STATUSES = {
+  'nc': {label:'Non contacté', cls:'s-nc', days:null},
+  'em': {label:'Email envoyé', cls:'s-em', days:14},
+  'r1': {label:'Relance 1',    cls:'s-r1', days:21},
+  'r2': {label:'Relance 2',    cls:'s-r2', days:28},
+  'rp': {label:'Réponse reçue',cls:'s-rp', days:null},
+  'en': {label:'Entretien',    cls:'s-en', days:null},
+  'ok': {label:'Poste obtenu ✓',cls:'s-ok',days:null},
+  'rf': {label:'Refus',        cls:'s-rf', days:null},
+};
+
+// ═══════════════════════════════════════════════════
+// DATA CACHE
+// ═══════════════════════════════════════════════════
+let data = {};
+
+function getEntry(id) {
+  return data[id] || {status:'nc', contactDate:'', relanceDate:'', notes:'', prio:false, interest:''};
+}
+
+async function saveEntry(id, field, val) {
+  if (!data[id]) data[id] = {status:'nc', contactDate:'', relanceDate:'', notes:'', prio:false, interest:''};
+  data[id][field] = val;
+  try {
+    // Si l'adresse change, effacer les coords géocodées pour forcer un nouveau géocodage sur la carte
+    const payload = {[field]: val};
+    if (field === 'address' || field === 'city') { payload._lat = null; payload._lng = null; }
+    await userCol(COL).doc(id).set(payload, {merge: true});
+    flashSaved();
+  } catch(e) {
+    console.error('Erreur Firestore:', e);
+    document.getElementById('sync-ind').textContent = '⚠️ Erreur sync';
+  }
+  updateStats();
+}
+
+function flashSaved() {
+  const ind = document.getElementById('save-ind');
+  ind.style.opacity = '1';
+  setTimeout(() => ind.style.opacity = '0', 1500);
+}
+
+// ═══════════════════════════════════════════════════
+// INIT FIREBASE
+// ═══════════════════════════════════════════════════
+async function initData() {
+  try {
+    // Charger le modèle mail
+    try {
+      const mailDoc = await userCol('settings').doc('mail').get();
+      if (mailDoc.exists && mailDoc.data().template) {
+        mailTemplate = mailDoc.data().template;
+      }
+      if (mailDoc.exists && mailDoc.data().subject) {
+        mailSubject = mailDoc.data().subject;
+      }
+    } catch(e) { /* si pas encore créé, on garde le défaut */ }
+
+    // Charger toutes les entreprises
+    const snapshot = await userCol(COL).get();
+    const existing = new Set();
+
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      data[doc.id] = d;
+      existing.add(doc.id);
+      // Entreprises ajoutées : on les met dans la liste
+      if (d._custom && !AGENCIES.find(a => a.id === doc.id)) {
+        AGENCIES.push({
+          id: doc.id,
+          name: d._name || doc.id,
+          city: d._city || '',
+          phone: d._phone || '',
+          email: d._email || '',
+          site: d._site || '',
+        });
+      }
+    });
+
+    // Initialiser les entreprises manquantes
+    const missing = AGENCIES.filter(ag => !existing.has(ag.id));
+    if (missing.length > 0) {
+      const batch = db.batch();
+      missing.forEach(ag => {
+        const ref = userCol(COL).doc(ag.id);
+        batch.set(ref, {status:'nc', contactDate:'', relanceDate:'', notes:'', prio:false, interest:''});
+        data[ag.id] = {status:'nc', contactDate:'', relanceDate:'', notes:'', prio:false, interest:''};
+      });
+      await batch.commit();
+    }
+
+    document.getElementById('loading-screen').style.display = 'none';
+    document.getElementById('sync-ind').textContent = '✅ Firebase connecté';
+    setTimeout(() => {
+      document.getElementById('sync-ind').textContent = '🔄 Firebase';
+    }, 2000);
+
+    updateStats();
+    renderTable();
+    adjustLayout();
+
+  } catch(e) {
+    console.error('Erreur init Firebase:', e);
+    document.getElementById('loading-screen').innerHTML =
+      '<div style="color:#ef4444;font-size:.9rem;text-align:center;padding:2rem">' +
+      '⚠️ Impossible de se connecter à Firebase.<br>Vérifiez votre connexion internet.</div>';
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// MODAL AJOUT ENTREPRISE
+// ═══════════════════════════════════════════════════
+function openModal() {
+  document.getElementById('modal-overlay').classList.remove('hidden');
+  document.getElementById('m-name').focus();
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.add('hidden');
+  ['m-name','m-city','m-phone','m-email','m-site'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+}
+function closeModalOutside(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+
+async function saveCustomAgency() {
+  const name = document.getElementById('m-name').value.trim();
+  if (!name) { alert('Le nom de l\'entreprise est obligatoire.'); return; }
+
+  const city  = document.getElementById('m-city').value.trim();
+  const phone = document.getElementById('m-phone').value.trim();
+  const email = document.getElementById('m-email').value.trim();
+  const site  = document.getElementById('m-site').value.trim().replace(/^https?:\/\//,'');
+
+  // Générer un ID unique
+  const ts = Date.now();
+  const id = 'c' + ts;
+
+  // Pousser dans le tableau local
+  const newAg = {id, name, city, phone, email, site};
+  AGENCIES.push(newAg);
+
+  // Sauvegarder en Firestore avec métadonnées
+  data[id] = {status:'nc', contactDate:'', relanceDate:'', notes:'', prio:false,
+              _custom:true, _name:name, _city:city, _phone:phone, _email:email, _site:site};
+  try {
+    await userCol(COL).doc(id).set(data[id]);
+    flashSaved();
+  } catch(e) {
+    console.error('Erreur ajout entreprise:', e);
+    alert('Erreur lors de la sauvegarde. Vérifiez votre connexion.');
+    return;
+  }
+
+  closeModal();
+  updateStats();
+  renderTable();
+}
+
+// ═══════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════
+let activeFilter = 'all';
+let sortKey = '';
+let sortDir = 1;
+
+// ═══════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════
+function today() {
+  return new Date().toISOString().split('T')[0];
+}
+function isOverdue(dateStr) {
+  if (!dateStr) return false;
+  return dateStr < today();
+}
+function isToday(dateStr) {
+  return dateStr === today();
+}
+function addDays(dateStr, n) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().split('T')[0];
+}
+
+// ═══════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════
+let activeInt = ''; // '' = tous, 'green', 'orange', 'none'
+const INT_CYCLE = ['', 'green', 'orange', 'none'];
+const INT_DOT_STYLE = {
+  '':      {bg:'transparent', border:'#888'},
+  'green': {bg:'#16a34a',     border:'#16a34a'},
+  'orange':{bg:'#f97316',     border:'#f97316'},
+  'none':  {bg:'#d1d5db',     border:'#9ca3af'},
+};
+function cycleIntFilter(th) {
+  const idx = (INT_CYCLE.indexOf(activeInt) + 1) % INT_CYCLE.length;
+  activeInt = INT_CYCLE[idx];
+  const s = INT_DOT_STYLE[activeInt];
+  const dot = document.getElementById('int-filter-dot');
+  dot.style.background = s.bg;
+  dot.style.borderColor = s.border;
+  th.style.opacity = activeInt ? '1' : '.5';
+  renderTable();
+}
+
+function getFiltered() {
+  const sf = document.getElementById('search').value.toLowerCase();
+  return AGENCIES.filter(ag => {
+    const e = getEntry(ag.id);
+    if (e._hidden) return false;
+    const addr = (ADDRESSES[ag.id]||'').toLowerCase();
+    if (sf && !ag.name.toLowerCase().includes(sf) && !ag.city.toLowerCase().includes(sf) && !ag.site.toLowerCase().includes(sf) && !addr.includes(sf)) return false;
+    if (activeInt === 'green' && e.interest !== 'green') return false;
+    if (activeInt === 'orange' && e.interest !== 'orange') return false;
+    if (activeInt === 'none' && (e.interest === 'green' || e.interest === 'orange')) return false;
+    if (activeFilter === 'prio') return e.prio;
+    if (activeFilter !== 'all' && e.status !== activeFilter) return false;
+    return true;
+  });
+}
+
+async function deleteAgency(id) {
+  if (!confirm('Supprimer cette entreprise du tableau ?')) return;
+  const e = getEntry(id);
+  if (e._custom) {
+    await userCol(COL).doc(id).delete();
+    const idx = AGENCIES.findIndex(a => a.id === id);
+    if (idx !== -1) AGENCIES.splice(idx, 1);
+    delete data[id];
+  } else {
+    await userCol(COL).doc(id).set({_hidden: true}, {merge: true});
+    data[id] = {...(data[id]||{}), _hidden: true};
+  }
+  renderTable();
+}
+
+function editCell(td, id, field, currentVal) {
+  if (td.querySelector('input.cell-input')) return;
+  // Read current value from data attribute if available (avoids HTML encoding issues)
+  if (td.dataset.editVal !== undefined) currentVal = td.dataset.editVal;
+  const prev = td.innerHTML;
+  td.innerHTML = '';
+  const inp = document.createElement('input');
+  inp.className = 'cell-input';
+  inp.value = currentVal;
+  td.appendChild(inp);
+  inp.focus();
+  inp.select();
+  const commit = async () => {
+    const val = inp.value.trim();
+    await saveEntry(id, field, val);
+    renderTable();
+  };
+  inp.addEventListener('blur', commit);
+  inp.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); }
+    if (ev.key === 'Escape') { td.innerHTML = prev; }
+  });
+  inp.addEventListener('click', ev => ev.stopPropagation());
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tbody');
+  let rows = getFiltered();
+
+  if (sortKey) {
+    rows.sort((a,b) => {
+      let va, vb;
+      if (sortKey === 'name')    { va = a.name; vb = b.name; }
+      else if (sortKey === 'city')   { va = a.city; vb = b.city; }
+      else if (sortKey === 'status') { va = getEntry(a.id).status; vb = getEntry(b.id).status; }
+      else if (sortKey === 'contact'){ va = getEntry(a.id).contactDate||''; vb = getEntry(b.id).contactDate||''; }
+      else if (sortKey === 'relance'){ va = getEntry(a.id).relanceDate||''; vb = getEntry(b.id).relanceDate||''; }
+      else if (sortKey === 'prio')   { return (getEntry(a.id).prio?0:1)-(getEntry(b.id).prio?0:1); }
+      return sortDir * va.localeCompare(vb);
+    });
+  }
+
+  tbody.innerHTML = '';
+  const es = document.getElementById('empty-state');
+  if (rows.length === 0) { es.style.display='block'; return; } else es.style.display='none';
+
+  rows.forEach((ag, i) => {
+    const e = getEntry(ag.id);
+    const st = STATUSES[e.status] || STATUSES['nc'];
+    const overdue = isOverdue(e.relanceDate) && e.status !== 'ok' && e.status !== 'rf' && e.status !== 'rp';
+    const todayRel = isToday(e.relanceDate);
+    const tr = document.createElement('tr');
+    if (overdue) tr.classList.add('overdue');
+    if (e.status === 'rf') tr.classList.add('refused');
+    if (e.status === 'rp') tr.classList.add('replied');
+    if (e.status === 'en') tr.classList.add('interview');
+
+    // Colonnes séparées : adresse / téléphone / email (Firebase override > AGENCIES)
+    const phone = e.phone  !== undefined ? e.phone  : ag.phone;
+    const email = e.email  !== undefined ? e.email  : ag.email;
+    const site  = e.site   !== undefined ? e.site   : ag.site;
+    const city  = e.city   !== undefined ? e.city   : ag.city;
+    const name  = e.name   !== undefined ? e.name   : ag.name;
+    const adresse = e.address !== undefined ? e.address : (ADDRESSES[ag.id] || '');
+    const phoneHtml = phone
+      ? `<a class="tel-lnk" href="tel:${phone}">${phone}</a>`
+      : '<span style="color:#ddd;font-size:.72rem">—</span>';
+    const emailHtml = email
+      ? `<a class="mail-lnk" href="${makeMailto({...ag, email})}" title="Ouvrir avec modèle de lettre" onclick="handleEmailClick(event,'${ag.id}')">✉ ${email}</a>`
+      : '<span style="color:#ddd;font-size:.72rem">—</span>';
+
+    const statusOpts = Object.entries(STATUSES).map(([k,v]) =>
+      `<option value="${k}" ${e.status===k?'selected':''}>${v.label}</option>`
+    ).join('');
+
+    const relCls = overdue ? 'overdue' : todayRel ? 'today' : '';
+
+    tr.innerHTML = `
+      <td style="color:#bbb;font-size:.72rem;text-align:right">${i+1}</td>
+      <td style="text-align:center"><span class="star ${e.prio?'on':''}" data-id="${ag.id}" onclick="togglePrio('${ag.id}',this)">★</span></td>
+      <td style="text-align:center"><span class="int-dot ${e.interest||''}" title="${e.interest==='green'?'Oui — envoi prévu':e.interest==='orange'?'Peut-être':'Pas encore décidé'}" onclick="cycleInterest('${ag.id}',this)"></span></td>
+      <td style="font-weight:600;min-width:160px" class="editable-td" data-edit-val="${name.replace(/"/g,'&quot;')}" onclick="editCell(this,'${ag.id}','name','')">${name}</td>
+      <td style="color:#555;white-space:nowrap;font-size:.78rem" class="editable-td" data-edit-val="${city.replace(/"/g,'&quot;')}" onclick="editCell(this,'${ag.id}','city','')">${city}</td>
+      <td class="addr-td editable-td" data-edit-val="${adresse.replace(/"/g,'&quot;')}" onclick="editCell(this,'${ag.id}','address','')">${adresse || '<span style="color:#e0e0e0">—</span>'}</td>
+      <td class="phone-td editable-td" data-edit-val="${phone.replace(/"/g,'&quot;')}" ondblclick="editCell(this,'${ag.id}','phone','')">${phoneHtml}</td>
+      <td class="email-td editable-td" data-edit-val="${email.replace(/"/g,'&quot;')}" ondblclick="editCell(this,'${ag.id}','email','')">${emailHtml}</td>
+      <td class="editable-td" ondblclick="editCell(this,'${ag.id}','site','${site.replace(/'/g,"&#39;")}')" style="font-size:.78rem"><a class="site-lnk" href="https://${site}" target="_blank">${site}</a></td>
+      <td>
+        <select class="status-sel ${st.cls}" data-id="${ag.id}" onchange="changeStatus('${ag.id}',this)">
+          ${statusOpts}
+        </select>
+      </td>
+      <td>
+        <input type="date" class="date-in" value="${e.contactDate||''}"
+          onchange="saveEntry('${ag.id}','contactDate',this.value);autoRelance('${ag.id}')"/>
+      </td>
+      <td>
+        <input type="date" class="date-in ${relCls}" value="${e.relanceDate||''}"
+          onchange="saveEntry('${ag.id}','relanceDate',this.value);renderTable()"/>
+        ${overdue?'<br><span style="color:#dc2626;font-size:.68rem;font-weight:700">EN RETARD</span>':''}
+        ${todayRel&&!overdue?'<br><span style="color:#d97706;font-size:.68rem;font-weight:700">AUJOURD\'HUI</span>':''}
+      </td>
+      <td class="socials-td" title="Double-clic pour modifier les réseaux" ondblclick="editSocials('${ag.id}')">${renderSocials(ag.id, e.socials)}</td>
+      <td class="notes-td">
+        <textarea class="note-ta" rows="1"
+          onchange="saveEntry('${ag.id}','notes',this.value)"
+          placeholder="Notes…">${e.notes||''}</textarea>
+      </td>
+      <td style="text-align:center;width:32px">
+        <button class="btn-del" onclick="deleteAgency('${ag.id}')" title="Supprimer">🗑</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function changeStatus(id, sel) {
+  const newStatus = sel.value;
+  sel.className = `status-sel ${STATUSES[newStatus].cls}`;
+  saveEntry(id, 'status', newStatus);
+  if (newStatus === 'rf' || newStatus === 'rp' || newStatus === 'en') {
+    saveEntry(id, 'relanceDate', '');
+  } else if (STATUSES[newStatus].days) {
+    const e = getEntry(id);
+    if (!e.relanceDate) {
+      const base = e.contactDate || today();
+      saveEntry(id, 'relanceDate', addDays(base, STATUSES[newStatus].days));
+    }
+  }
+  renderTable();
+}
+
+// ── RÉSEAUX SOCIAUX (renseignés depuis le tableau) ──
+const AGENCY_SOCIALS = {};
+
+// ── SOCIALS RENDER ───────────────────────────────────
+const SOCIAL_CFG = [
+  {key:'ig',  label:'Instagram', color:'#E1306C', svg:'<svg viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>'},
+  {key:'fb',  label:'Facebook',  color:'#1877F2', svg:'<svg viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>'},
+  {key:'li',  label:'LinkedIn',  color:'#0A66C2', svg:'<svg viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>'},
+  {key:'pi',  label:'Pinterest', color:'#E60023', svg:'<svg viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>'},
+];
+
+function renderSocials(agId, overrideSocials) {
+  const socials = (overrideSocials && Object.keys(overrideSocials).length) ? overrideSocials : (AGENCY_SOCIALS[agId] || {});
+  const icons = SOCIAL_CFG
+    .filter(s => socials[s.key])
+    .map(s => `<a href="${socials[s.key]}" target="_blank" class="social-ico" title="${s.label}" onclick="event.stopPropagation()"><div style="width:20px;height:20px;border-radius:5px;background:${s.color};display:flex;align-items:center;justify-content:center">${s.svg}</div></a>`)
+    .join('');
+  return icons || '<span style="color:#e0e0e0;font-size:.7rem">—</span>';
+}
+
+function editSocials(id) {
+  const e = getEntry(id);
+  const s = (e.socials && Object.keys(e.socials).length) ? e.socials : (AGENCY_SOCIALS[id] || {});
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:14px;padding:1.4rem 1.6rem;width:320px;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+      <div style="font-weight:700;font-size:1rem;margin-bottom:1rem">Réseaux sociaux</div>
+      ${SOCIAL_CFG.map(sc => `
+        <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.6rem">
+          <div style="width:22px;height:22px;border-radius:5px;background:${sc.color};display:flex;align-items:center;justify-content:center;flex-shrink:0">${sc.svg}</div>
+          <input id="soc-${sc.key}" type="url" placeholder="${sc.label} URL…" value="${s[sc.key]||''}"
+            style="flex:1;border:1px solid #e2e8f0;border-radius:6px;padding:.35rem .6rem;font-size:.8rem;font-family:inherit"/>
+        </div>`).join('')}
+      <div style="display:flex;gap:.6rem;margin-top:1rem;justify-content:flex-end">
+        <button onclick="this.closest('div[style*=fixed]').remove()" style="background:#f1f5f9;border:none;border-radius:7px;padding:.4rem .9rem;cursor:pointer;font-size:.85rem">Annuler</button>
+        <button onclick="saveSocials('${id}',this)" style="background:#1a1a1a;color:#fff;border:none;border-radius:7px;padding:.4rem .9rem;cursor:pointer;font-size:.85rem;font-weight:600">Sauvegarder</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+async function saveSocials(id, btn) {
+  const socials = {};
+  SOCIAL_CFG.forEach(sc => {
+    const v = document.getElementById('soc-'+sc.key).value.trim();
+    if (v) socials[sc.key] = v;
+  });
+  await saveEntry(id, 'socials', socials);
+  btn.closest('div[style*=fixed]').remove();
+  renderTable();
+}
+
+function togglePrio(id, el) {
+  const e = getEntry(id);
+  const newVal = !e.prio;
+  saveEntry(id, 'prio', newVal);
+  el.classList.toggle('on', newVal);
+  updateStats();
+}
+
+function cycleInterest(id, el) {
+  const e = getEntry(id);
+  const cycle = {'': 'green', 'green': 'orange', 'orange': ''};
+  const newVal = cycle[e.interest || ''];
+  saveEntry(id, 'interest', newVal);
+  el.className = 'int-dot ' + newVal;
+  const titles = {'green': 'Oui — envoi prévu', 'orange': 'Peut-être', '': 'Pas encore décidé'};
+  el.title = titles[newVal];
+}
+
+function autoRelance(id) {
+  const e = getEntry(id);
+  if (e.contactDate && !e.relanceDate && STATUSES[e.status]?.days) {
+    saveEntry(id, 'relanceDate', addDays(e.contactDate, STATUSES[e.status].days));
+    renderTable();
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// STATS & ALERTS
+// ═══════════════════════════════════════════════════
+function updateStats() {
+  const counts = {nc:0,em:0,r1:0,r2:0,rp:0,en:0,ok:0,rf:0,prio:0};
+  AGENCIES.forEach(ag => {
+    const e = getEntry(ag.id);
+    if (e._hidden) return;
+    if (counts[e.status] !== undefined) counts[e.status]++;
+    if (e.prio) counts.prio++;
+  });
+  document.getElementById('cnt-all').textContent = AGENCIES.filter(ag => !getEntry(ag.id)._hidden).length;
+  ['nc','em','r1','rp','en','ok','rf','prio'].forEach(k => {
+    const el = document.getElementById('cnt-'+k);
+    if (el) el.textContent = counts[k] || 0;
+  });
+  const overdue = AGENCIES.filter(ag => {
+    const e = getEntry(ag.id);
+    return isOverdue(e.relanceDate) && e.status !== 'ok' && e.status !== 'rf' && e.status !== 'rp';
+  });
+  const alertBar = document.getElementById('alert-bar');
+  if (overdue.length > 0) {
+    document.getElementById('alert-msg').textContent =
+      `${overdue.length} relance${overdue.length>1?'s':''} en retard`;
+    alertBar.classList.add('show');
+  } else {
+    alertBar.classList.remove('show');
+  }
+  adjustLayout();
+}
+
+// ═══════════════════════════════════════════════════
+// ACTIONS
+// ═══════════════════════════════════════════════════
+function sortBy(key) {
+  if (sortKey === key) sortDir *= -1;
+  else { sortKey = key; sortDir = 1; }
+  renderTable();
+}
+
+function resetAllFilters() {
+  activeFilter = 'all';
+  activeInt = '';
+  const dot = document.getElementById('int-filter-dot');
+  if (dot) { dot.style.background='transparent'; dot.style.borderColor='#888'; }
+  const th = document.getElementById('int-filter-th');
+  if (th) th.style.opacity = '.5';
+  document.getElementById('search').value = '';
+  document.querySelectorAll('.stat-pill').forEach(p => p.classList.toggle('active', p.dataset.filter==='all'));
+  renderTable();
+}
+
+function setRelanceDates() {
+  let set = 0;
+  AGENCIES.forEach(ag => {
+    const e = getEntry(ag.id);
+    if (e.contactDate && !e.relanceDate && STATUSES[e.status]?.days) {
+      saveEntry(ag.id, 'relanceDate', addDays(e.contactDate, STATUSES[e.status].days));
+      set++;
+    }
+  });
+  alert(`${set} date(s) de relance automatiquement calculée(s).`);
+  renderTable();
+}
+
+function exportCSV() {
+  const rows = [['Entreprise','Ville','Téléphone','Email','Site','Statut','Date contact','Relance prévue','Notes','Priorité']];
+  AGENCIES.forEach(ag => {
+    const e = getEntry(ag.id);
+    if (e._hidden) return;
+    const v = f => e[f] !== undefined ? e[f] : ag[f];
+    rows.push([v('name'),v('city'),v('phone'),v('email'),v('site'),
+      STATUSES[e.status]?.label||'',e.contactDate||'',e.relanceDate||'',e.notes||'',e.prio?'Oui':'']);
+  });
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'suivi_candidatures_'+today()+'.csv';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+// ═══════════════════════════════════════════════════
+// EVENTS
+// ═══════════════════════════════════════════════════
+document.querySelectorAll('.stat-pill').forEach(pill => {
+  pill.addEventListener('click', () => {
+    activeFilter = pill.dataset.filter;
+    document.querySelectorAll('.stat-pill').forEach(p => p.classList.toggle('active', p === pill));
+    renderTable();
+  });
+});
+document.getElementById('search').addEventListener('input', renderTable);
+
+// Fermer le modal avec Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});
+
+// ═══════════════════════════════════════════════════
+// DÉMARRAGE
+// ═══════════════════════════════════════════════════
+requireAuth(initData);
+</script>
+</body>
+</html>
